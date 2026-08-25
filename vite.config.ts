@@ -11,6 +11,10 @@ export default defineConfig({
       '@': path.resolve(import.meta.dirname, './src'),
     },
   },
+  server: {
+    port: 5174,
+    strictPort: true,
+  },
   test: {
     environment: 'node',
     include: ['src/**/*.test.ts'],

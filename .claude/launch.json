@@ -2,10 +2,10 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "etl-test-case-generator",
-      "runtimeExecutable": "C:\\Users\\HP\\OneDrive\\Documents\\MyApp\\run-dev.cmd",
+      "name": "etl-test-case-generator-python",
+      "runtimeExecutable": "C:\\Users\\HP\\OneDrive\\Documents\\ETLtesterApp_python\\run-dev.cmd",
       "runtimeArgs": [],
-      "port": 5173
+      "port": 5174
     }
   ]
 }
