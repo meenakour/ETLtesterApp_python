@@ -53,6 +53,23 @@ export function primaryJoinsForTable(index: JoinAssociation, tableName: string):
   return index.primaryJoinsByTable.get(normalizeTableName(tableName)) ?? [];
 }
 
+/**
+ * Every join/filter row in the workbook, deduplicated (the same row object is indexed under
+ * multiple keys in `joinsByTable`, once per table it touches). Used as the candidate pool for
+ * `computeJoinScope`'s transitive expansion -- a join two hops away from a query's anchor table
+ * (e.g. anchor A, joined to B, which is separately joined to C) is only ever discoverable if the
+ * candidate pool includes joins owned by B, not just ones owned by A itself. `computeJoinScope`
+ * already does its own reachability filtering, so passing it every row in the workbook is safe:
+ * anything not actually connected to the anchor table is simply never attached.
+ */
+export function allJoinRows(index: JoinAssociation): JoinFilterRow[] {
+  const seen = new Set<JoinFilterRow>();
+  for (const rows of index.joinsByTable.values()) {
+    for (const row of rows) seen.add(row);
+  }
+  return [...seen];
+}
+
 export function groupMappingRowsByTargetTable(rows: MappingRow[]): Map<string, MappingRow[]> {
   const grouped = new Map<string, MappingRow[]>();
   for (const row of rows) {

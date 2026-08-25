@@ -103,4 +103,24 @@ describe('buildMappingRows', () => {
     const rows = buildMappingRows(sheet, makeColumns());
     expect(rows[0].sourceTable).toBe('orders raw');
   });
+
+  it('regression: keeps only the first table when Source Table lists more than one (e.g. "srctb1 ,srctb2" for a transformation drawing from both)', () => {
+    // A raw compound value like this can't be used as a single SQL identifier -- the FROM clause
+    // needs one physical table, and any additional tables are expected to be documented as joins
+    // in the joins sheet instead (which is how their row-count/referential-integrity checks
+    // already attach).
+    const sheet = makeSheet([
+      { 'Source Field': 'column_1,att_1', 'Target Field': 'field_1', 'Source Table': 'srctb1 ,srctb2', 'Target Table': 'trtable' },
+    ]);
+    const rows = buildMappingRows(sheet, makeColumns());
+    expect(rows[0].sourceTable).toBe('srctb1');
+  });
+
+  it('leaves a normal single Source Table value unaffected', () => {
+    const sheet = makeSheet([
+      { 'Source Field': 'amount', 'Target Field': 'amount', 'Source Table': 'orders_raw', 'Target Table': 'orders' },
+    ]);
+    const rows = buildMappingRows(sheet, makeColumns());
+    expect(rows[0].sourceTable).toBe('orders_raw');
+  });
 });

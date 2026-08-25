@@ -36,6 +36,20 @@ function splitMultilineValue(raw: string): string[] {
     .filter(Boolean);
 }
 
+/**
+ * Some mapping docs list more than one source table in a single Source Table cell (e.g.
+ * "srctb1 ,srctb2") when a transformation draws from multiple tables at once (their Source Column
+ * cell correspondingly lists "column_1,att_1" -- see businessRuleHeuristics/transformationSql for
+ * how those individual column names get recovered for classification). A row's `sourceTable` is
+ * used everywhere as a single physical FROM-clause table, though, so only the first is kept here --
+ * any additional tables are expected to be documented as joins in the joins sheet instead, which is
+ * how their row/schema/referential-integrity checks already get attached.
+ */
+function firstTableName(value: string): string {
+  const [first] = value.split(/[,;]|\band\b|&/i);
+  return (first ?? '').trim();
+}
+
 export function buildMappingRows(
   sheet: SheetData,
   columns: DetectedColumn<MappingFieldKey>[]
@@ -59,7 +73,7 @@ export function buildMappingRows(
       const isNullable = nullableColumn ? (nullableColumn.inverted ? !nullableRaw : nullableRaw) : true;
 
       const shared = {
-        sourceTable: getValue(row, get('sourceTable')?.matchedHeader ?? null),
+        sourceTable: firstTableName(getValue(row, get('sourceTable')?.matchedHeader ?? null)),
         sourceSchema: getValue(row, get('sourceSchema')?.matchedHeader ?? null),
         transformation: getValue(row, get('transformation')?.matchedHeader ?? null),
         targetTable: getValue(row, get('targetTable')?.matchedHeader ?? null),

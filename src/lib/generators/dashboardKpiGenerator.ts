@@ -5,6 +5,7 @@ import { getTableTypeConfig } from '@/types/tableTypeConfig';
 import { resolveSourceReference } from '@/lib/sql/sourceReference';
 import { quoteColumn } from '@/lib/sql/identifierQuoting';
 import { classifyTransformation, qualifyFieldReferences } from '@/lib/generators/businessRuleHeuristics';
+import { buildKnownFields } from '@/lib/generators/transformationSql';
 
 /**
  * L3 dashboard-KPI validation: there's no queryable target (a dashboard tile isn't a table), so
@@ -22,12 +23,10 @@ export function generateDashboardKpiTests(ctx: GeneratorContext): TestCase[] {
     const sourceTable = rows.find((r) => r.sourceTable)?.sourceTable ?? '';
     const sourceSchema = rows.find((r) => r.sourceSchema)?.sourceSchema;
     const sourceQualified = resolveSourceReference(typeConfig, rows, sourceSchema, sourceTable);
-    // See transformationSql.ts's buildFieldValidationSql for why this includes more than just
-    // this table's own source fields: a KPI formula commonly references a sibling source column
-    // mapped elsewhere in the doc, not only the row's own declared Source Field.
-    const knownFields = [...rows.map((r) => r.sourceField), ...ctx.allMappingRows.map((r) => r.sourceField)].filter(
-      Boolean
-    );
+    // See transformationSql.ts's buildKnownFields for why this includes more than just this
+    // table's own source fields (a KPI formula commonly references a sibling source column mapped
+    // elsewhere in the doc) and why compound comma-joined Source Column cells get split apart.
+    const knownFields = buildKnownFields(rows, ctx.allMappingRows);
 
     const kpiName = typeConfig.kpiName || targetTable;
     const dashboardName = typeConfig.dashboardName || '(dashboard name not set — configure it in Preview)';

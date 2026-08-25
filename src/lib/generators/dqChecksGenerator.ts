@@ -1,9 +1,11 @@
 import type { GeneratorContext } from '@/lib/generators/types';
 import { nextDraftId } from '@/lib/generators/types';
 import type { TestCase } from '@/types/testCase';
-import type { MappingRow, JoinFilterRow } from '@/types/mapping';
+import type { MappingRow } from '@/types/mapping';
 import { qualifiedTable, quoteColumn } from '@/lib/sql/identifierQuoting';
+import { stripRedundantLeadingKeyword } from '@/lib/sql/sqlSnippets';
 import { normalizeTableName } from '@/lib/excel/normalizeTableName';
+import { allJoinRows } from '@/lib/excel/associateJoins';
 import { isCdeIdentifier } from '@/lib/cde';
 import { classifyDatatype } from '@/lib/datatype';
 import { getTableTypeConfig } from '@/types/tableTypeConfig';
@@ -172,10 +174,7 @@ export function generateDqChecks(ctx: GeneratorContext): TestCase[] {
 function buildReferentialIntegrityChecks(ctx: GeneratorContext): TestCase[] {
   const testCases: TestCase[] = [];
 
-  const allJoins = new Set<JoinFilterRow>();
-  for (const rows of ctx.joinIndex.joinsByTable.values()) {
-    for (const row of rows) allJoins.add(row);
-  }
+  const allJoins = allJoinRows(ctx.joinIndex);
 
   const targetByNormalizedName = new Map<string, { targetTable: string; rows: MappingRow[] }>();
   for (const [targetTable, rows] of ctx.mappingRowsByTargetTable) {
@@ -203,7 +202,11 @@ function buildReferentialIntegrityChecks(ctx: GeneratorContext): TestCase[] {
     const childSchema = childRows.find((r) => r.targetSchema)?.targetSchema;
     const qualifiedChild = qualifiedTable(childSchema, childTable);
 
-    const aliasedCondition = substituteTableAliases(join.joinCondition, childTable, otherTable);
+    const aliasedCondition = substituteTableAliases(
+      stripRedundantLeadingKeyword(join.joinCondition, 'on'),
+      childTable,
+      otherTable
+    );
     const parentColMatch = aliasedCondition.match(/p\.(\w+)/);
     if (!parentColMatch) continue;
     const parentCol = parentColMatch[1];

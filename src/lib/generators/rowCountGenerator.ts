@@ -1,16 +1,12 @@
 import type { GeneratorContext } from '@/lib/generators/types';
 import { nextDraftId } from '@/lib/generators/types';
 import type { TestCase } from '@/types/testCase';
-import type { MappingRow, JoinFilterRow } from '@/types/mapping';
-import { primaryJoinsForTable } from '@/lib/excel/associateJoins';
+import type { MappingRow } from '@/types/mapping';
+import { allJoinRows } from '@/lib/excel/associateJoins';
 import { normalizeTableName } from '@/lib/excel/normalizeTableName';
-import { buildFromClause, buildWhereClauseLines, combineWhere, filterJoinsRelevantTo } from '@/lib/sql/sqlSnippets';
+import { buildWhereClauseLines, combineWhere, computeJoinScope, filterConditionsInScope } from '@/lib/sql/sqlSnippets';
 import { getTableTypeConfig } from '@/types/tableTypeConfig';
 import { resolveSourceReference, resolveTargetReference } from '@/lib/sql/sourceReference';
-
-function dedupeJoinRows(rows: JoinFilterRow[]): JoinFilterRow[] {
-  return [...new Set(rows)];
-}
 
 /**
  * Picks the single "driving" source table for a target group's row-count check -- the one whose
@@ -66,25 +62,25 @@ export function generateRowCountTests(ctx: GeneratorContext): TestCase[] {
 
     const sourceSchema = srcRows.find((r) => r.sourceSchema)?.sourceSchema;
     const isFileSource = typeConfig.sourceKind === 'file';
-    const relevantJoins = isFileSource
-      ? []
-      : dedupeJoinRows([
-          ...primaryJoinsForTable(ctx.joinIndex, sourceTable),
-          ...primaryJoinsForTable(ctx.joinIndex, targetTable),
-        ]);
+    // The full workbook's join/filter rows, not just ones primarily owned by `sourceTable` or
+    // `targetTable` -- computeJoinScope below needs the wider candidate pool to discover a join
+    // that's only reachable transitively (e.g. sourceTable joined to B, and B separately joined to
+    // C via a row owned by B, not sourceTable). It safely ignores anything not actually connected.
+    const relevantJoins = isFileSource ? [] : allJoinRows(ctx.joinIndex);
 
     const sourceQualified = resolveSourceReference(typeConfig, srcRows, sourceSchema, sourceTable);
     const targetQualified = resolveTargetReference(typeConfig, targetSchema, targetTable);
 
-    const fromClause = buildFromClause(sourceQualified, relevantJoins);
-    // Only carry a join's filter condition into the WHERE clause when that join actually got
-    // attached to the FROM clause above (i.e. it's genuinely about `sourceTable`) -- otherwise
-    // the query would reference a table/alias that never appears in the FROM at all. This can
-    // happen when the joins sheet documents conditions against the target-layer table name while
-    // the primary source table uses a different physical name (e.g. a "_raw" landing suffix); in
-    // that case the reconciliation still runs, just without those join filters applied.
-    const attachedJoins = filterJoinsRelevantTo(sourceTable, relevantJoins);
-    const whereClause = combineWhere(buildWhereClauseLines(attachedJoins));
+    // Expand outward from `sourceTable` to every table transitively reachable through the
+    // documented joins (A joined to B, B joined to C, ...), not just tables directly joined to
+    // it -- otherwise a filter or join tied to a transitively-joined table (e.g. one two hops
+    // away) would be silently dropped even though its table is genuinely part of this query, and
+    // the reconciliation would compare against the wrong set of "eligible" rows.
+    const { lines: joinLines, tables: scopeTables } = computeJoinScope(sourceTable, relevantJoins);
+    const fromClause = [`FROM ${sourceQualified}`, ...joinLines].join('\n');
+    const scopedFilters = filterConditionsInScope(relevantJoins, scopeTables);
+    const whereClause = combineWhere(buildWhereClauseLines(scopedFilters));
+    const hasJoinsOrFilters = joinLines.length > 0 || scopedFilters.length > 0;
 
     const sourceSql = [`SELECT COUNT(*) AS source_row_count`, fromClause, whereClause]
       .filter(Boolean)
@@ -100,9 +96,9 @@ export function generateRowCountTests(ctx: GeneratorContext): TestCase[] {
       name: `Row Count Reconciliation: ${sourceLabel} -> ${targetTable}`,
       category: 'ROW_COUNT_RECONCILIATION',
       priority: 'P1',
-      description: `Confirms the number of rows loaded into ${targetTable} matches the number of eligible rows in ${sourceLabel}${attachedJoins.length ? ', honoring any documented join/filter conditions' : ''}.`,
+      description: `Confirms the number of rows loaded into ${targetTable} matches the number of eligible rows in ${sourceLabel}${hasJoinsOrFilters ? ', honoring any documented join/filter conditions' : ''}.`,
       steps: [
-        `Run the source count query against ${isFileSource ? 'the source file' : `\`${sourceTable}\``}${attachedJoins.length ? ' with the associated joins/filters applied' : ''}.`,
+        `Run the source count query against ${isFileSource ? 'the source file' : `\`${sourceTable}\``}${hasJoinsOrFilters ? ' with the associated joins/filters applied' : ''}.`,
         `Run the target count query against \`${targetTable}\`.`,
         'Compare source_row_count to target_row_count.',
       ],

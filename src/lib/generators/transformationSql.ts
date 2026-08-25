@@ -20,10 +20,31 @@ interface KeyColumns {
   usedFallbackKey: boolean;
 }
 
-/** Picks the correlation key -- the declared primary key field(s), or (flagged with a comment) every mapped field as a best-effort fallback when no PK is declared. */
+/**
+ * Some mapping docs cram more than one column into a single Source Column cell (e.g.
+ * "column_1,att_1", when a transformation like concat(column_1,att_1) draws from two source
+ * columns at once, sometimes across two source tables per the matching Source Table cell). Split
+ * on comma/semicolon so each real column name is recoverable individually -- used only to widen
+ * the known-field whitelist (§buildKnownFields), never to fabricate a single SQL identifier out of
+ * the raw compound string.
+ */
+function splitCommaTokens(value: string): string[] {
+  return value
+    .split(/[,;]/)
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/** True when a field name is a single clean identifier -- not a comma/semicolon-joined compound value that can't be used as a literal SQL column reference. */
+function isSingleColumnName(value: string): boolean {
+  return value.trim().length > 0 && !/[,;]/.test(value);
+}
+
+/** Picks the correlation key -- the declared primary key field(s), or (flagged with a comment) every mapped field as a best-effort fallback when no PK is declared. A compound (comma-joined) Source/Target Column value is never used as a key column -- there's no single real identifier to reference. */
 function pickKeyColumns(tableRows: MappingRow[]): KeyColumns {
-  const keyRows = tableRows.filter((r) => r.isPrimaryKey && r.sourceField && r.targetField);
-  const effectiveKeyRows = keyRows.length > 0 ? keyRows : tableRows.filter((r) => r.sourceField && r.targetField);
+  const cleanRows = tableRows.filter((r) => isSingleColumnName(r.sourceField) && isSingleColumnName(r.targetField));
+  const keyRows = cleanRows.filter((r) => r.isPrimaryKey);
+  const effectiveKeyRows = keyRows.length > 0 ? keyRows : cleanRows;
   return {
     sourceCols: effectiveKeyRows.map((r) => r.sourceField),
     targetCols: effectiveKeyRows.map((r) => r.targetField),
@@ -90,7 +111,9 @@ export function buildKnownFields(tableRows: MappingRow[], allMappingRows: Mappin
     ...tableRows.map((r) => r.sourceField),
     ...tableRows.map((r) => r.targetField),
     ...allMappingRows.map((r) => r.sourceField),
-  ].filter(Boolean);
+  ]
+    .filter(Boolean)
+    .flatMap(splitCommaTokens);
 }
 
 export function buildFieldValidationSql(
