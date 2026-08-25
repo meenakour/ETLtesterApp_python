@@ -1,0 +1,11 @@
+node_modules
+dist
+.DS_Store
+*.local
+.env
+
+# Python (server/)
+server/venv
+server/__pycache__
+server/**/__pycache__
+*.pyc
