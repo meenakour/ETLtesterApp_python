@@ -62,3 +62,25 @@ def test_leaves_a_normal_single_source_table_value_unaffected():
     sheet = _sheet([{"Source Field": "amount", "Target Field": "amount", "Source Table": "orders_raw", "Target Table": "orders"}])
     rows = build_mapping_rows(sheet, _columns())
     assert rows[0].source_table == "orders_raw"
+
+
+def test_regression_blank_nullable_cell_defaults_to_nullable_like_a_missing_column():
+    sheet = _sheet(
+        [
+            {"Source Field": "a", "Target Field": "a", "Source Table": "t", "Target Table": "t", "Null": ""},
+            {"Source Field": "b", "Target Field": "b", "Source Table": "t", "Target Table": "t", "Null": "N"},
+            {"Source Field": "c", "Target Field": "c", "Source Table": "t", "Target Table": "t", "Null": "Y"},
+        ]
+    )
+    rows = build_mapping_rows(sheet, _columns(nullableFlag="Null"))
+    assert rows[0].is_nullable is True  # blank -- unspecified, not an explicit "not nullable"
+    assert rows[1].is_nullable is False  # explicit "N"
+    assert rows[2].is_nullable is True  # explicit "Y"
+
+
+def test_regression_blank_cell_in_an_inverted_mandatory_column_also_defaults_to_nullable():
+    sheet = _sheet([{"Source Field": "a", "Target Field": "a", "Source Table": "t", "Target Table": "t", "Mandatory": ""}])
+    columns = _columns(nullableFlag="Mandatory")
+    columns = [c if c.field != "nullableFlag" else DetectedColumn(field=c.field, matched_header=c.matched_header, confidence=c.confidence, inverted=True) for c in columns]
+    rows = build_mapping_rows(sheet, columns)
+    assert rows[0].is_nullable is True

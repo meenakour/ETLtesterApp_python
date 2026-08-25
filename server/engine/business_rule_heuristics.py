@@ -41,6 +41,10 @@ _TRIVIAL_SENTINELS = {
 
 _SQL_KEYWORDS = {
     "case", "when", "then", "else", "end", "and", "or", "not", "null", "as", "is", "in", "like", "between",
+    # Bare boolean literals -- e.g. "CASE WHEN active_flag = true THEN ... END" -- are SQL keywords,
+    # not user-controllable identifiers, exactly like NULL above; omitting them wrongly rejected an
+    # otherwise-fully-recognized CASE expression just for containing the word "true"/"false".
+    "true", "false",
     "date", "string", "int", "integer", "bigint", "smallint", "tinyint", "decimal", "numeric", "double",
     "float", "real", "timestamp", "boolean", "varchar", "char", "long", "short", "byte", "binary", "array",
     "map", "struct",

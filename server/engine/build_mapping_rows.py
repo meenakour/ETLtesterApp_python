@@ -56,10 +56,18 @@ def build_mapping_rows(sheet: SheetData, columns: list[DetectedColumn]) -> list[
         target_lines = _split_multiline_value(target_field_raw)
         line_count = max(len(source_lines), len(target_lines), 1)
 
+        # A blank cell in a *matched* nullable-flag column is not the same signal as an explicit
+        # "N" -- it means this particular row's value was never filled in, not that the analyst
+        # affirmatively declared the field NOT NULL. Treating blank the same as an explicit falsy
+        # value would fabricate a constraint the document never actually asserted (seen in a real
+        # doc where every single row left this column blank, wrongly flagging nearly every field
+        # as NOT NULL) -- so a blank cell falls back to the same permissive default as the column
+        # being entirely absent, regardless of whether it's a normal or inverted ("Mandatory") one.
+        nullable_cell_blank = not nullable_column or _get_value(row, nullable_column.matched_header) == ""
         nullable_raw = (
             _parse_boolean(row.get(nullable_column.matched_header, "")) if nullable_column and nullable_column.matched_header else True
         )
-        is_nullable = (not nullable_raw if nullable_column.inverted else nullable_raw) if nullable_column else True
+        is_nullable = True if nullable_cell_blank else ((not nullable_raw) if nullable_column.inverted else nullable_raw)
 
         shared = {
             "source_table": _first_table_name(_get_value(row, get("sourceTable").matched_header if get("sourceTable") else None)),

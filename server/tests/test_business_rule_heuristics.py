@@ -12,6 +12,11 @@ def test_case_expression_classifies_correctly():
     assert result.strategy == "CASE_EXPRESSION"
 
 
+def test_regression_bare_true_false_boolean_literal_recognized_as_keyword():
+    result = classify_transformation("CASE WHEN active_flag = true THEN 'A' ELSE 'B' END", ["active_flag"])
+    assert result.strategy == "CASE_EXPRESSION"
+
+
 def test_if_then_else_rewritten_to_case():
     result = classify_transformation("IF status = 'A' THEN 'Active' ELSE 'Inactive'", ["status"])
     assert result.strategy == "CASE_EXPRESSION"
