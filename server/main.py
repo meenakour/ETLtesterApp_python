@@ -1,22 +1,27 @@
-"""AI Assist backend (Python/FastAPI port).
+"""Backend for two independent, both-optional features:
 
-Optional backend for the app's AI Assist feature. Holds a single shared Anthropic API key
-server-side so the browser never has to store or expose it, and exposes one endpoint that
-translates a free-text transformation rule into a SQL expression when the app's own
-deterministic classifier gives up (i.e. only for rows that would otherwise be flagged
-Manual Review). The main app works completely fine without this server.
+1. AI Assist -- holds a single shared Anthropic API key server-side so the browser never has to
+   store or expose it, and translates a free-text transformation rule into a SQL expression when
+   the frontend's own deterministic classifier gives up. Requires ANTHROPIC_API_KEY; the route
+   returns 503 if it isn't configured, rather than the whole server refusing to start, since a
+   user may want only the pandas engine below and never touch AI Assist at all.
 
-This is a line-for-line behavioral port of the Node/Express version in the original repo
-(meenakour/ETLtesterApp's server/index.js) -- same two routes, same request/response shapes,
-same validation rules, same system prompt -- so the React frontend's fetch calls in
-src/lib/llm/aiAssist.ts work against this server completely unchanged.
+   This part is a line-for-line behavioral port of the Node/Express version in the original repo
+   (meenakour/ETLtesterApp's server/index.js) -- same route, same request/response shape, same
+   validation rules, same system prompt -- so src/lib/llm/aiAssist.ts works against it unchanged.
+
+2. The pandas/Python test-case-generation engine (engine/) -- a full re-implementation of the
+   frontend's ingestion + all nine generators, for anyone who wants the pipeline running
+   server-side instead of in the browser. Needs no API key at all; see engine/pipeline.py.
+
+The main app works completely fine without this server -- both features are opt-in.
 """
 
 import json
 import os
 import sys
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from dotenv import load_dotenv
 
@@ -25,10 +30,12 @@ from dotenv import load_dotenv
 # host machine (a real, observed failure mode: a stray non-UTF-8 .env several directories up).
 load_dotenv(dotenv_path=Path(__file__).resolve().parent / ".env")
 
-from fastapi import FastAPI  # noqa: E402
+from fastapi import FastAPI, Form, UploadFile  # noqa: E402
 from fastapi.middleware.cors import CORSMiddleware  # noqa: E402
 from fastapi.responses import JSONResponse  # noqa: E402
 from anthropic import Anthropic  # noqa: E402
+
+from engine.pipeline import generate_test_cases  # noqa: E402
 
 PORT = int(os.environ.get("PORT", "8787"))
 ALLOWED_ORIGIN = os.environ.get("ALLOWED_ORIGIN", "*")
@@ -37,12 +44,12 @@ MODEL = os.environ.get("ANTHROPIC_MODEL", "claude-haiku-4-5-20251001")
 API_KEY = os.environ.get("ANTHROPIC_API_KEY")
 if not API_KEY:
     print(
-        "ANTHROPIC_API_KEY is not set. Copy server/.env.example to server/.env and fill it in.",
+        "ANTHROPIC_API_KEY is not set -- AI Assist's /api/classify-transformation route will "
+        "return 503 until server/.env is configured. The pandas test-case-generation engine "
+        "below needs no key and works regardless.",
         file=sys.stderr,
     )
-    sys.exit(1)
-
-client = Anthropic(api_key=API_KEY)
+client = Anthropic(api_key=API_KEY) if API_KEY else None
 
 MAX_TRANSFORMATION_LENGTH = 2000
 MAX_KNOWN_FIELDS = 300
@@ -71,6 +78,12 @@ def health() -> dict[str, Any]:
 
 @app.post("/api/classify-transformation")
 async def classify_transformation(payload: dict[str, Any]) -> Any:
+    if client is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "AI Assist is not configured on this server -- set ANTHROPIC_API_KEY in server/.env"},
+        )
+
     transformation = payload.get("transformation")
     known_fields = payload.get("knownFields")
     target_field = payload.get("targetField")
@@ -113,6 +126,57 @@ async def classify_transformation(payload: dict[str, Any]) -> Any:
     except Exception as err:  # noqa: BLE001 -- deliberately broad: any Anthropic/SDK failure degrades to a 502
         print(f"Anthropic request failed: {err}", file=sys.stderr)
         return JSONResponse(status_code=502, content={"error": "AI classification request failed"})
+
+
+MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB -- generous for any real mapping doc, cheap to enforce
+
+
+@app.post("/api/generate-test-cases")
+async def generate_test_cases_endpoint(
+    file: UploadFile,
+    selected_categories: str = Form(...),
+    table_type_configs: str = Form("{}"),
+    mapping_sheet_name: Optional[str] = Form(None),
+    joins_sheet_name: Optional[str] = Form(None),
+) -> Any:
+    """Runs the full pandas/Python pipeline (engine/) on an uploaded mapping workbook: sheet
+    classification, column detection, mapping/join-row construction, and all nine generators --
+    the server-side equivalent of the frontend's own in-browser pipeline. `selected_categories`
+    and `table_type_configs` are JSON-encoded strings (multipart form fields can't carry nested
+    JSON directly); `table_type_configs` keys are target-table names and values use the same
+    camelCase shape as the frontend's TableTypeConfig (sourceKind, targetKind, dashboardName, ...).
+    """
+    file_bytes = await file.read()
+    if len(file_bytes) > MAX_UPLOAD_BYTES:
+        return JSONResponse(status_code=400, content={"error": f"file exceeds {MAX_UPLOAD_BYTES} bytes"})
+
+    try:
+        categories = json.loads(selected_categories)
+        if not isinstance(categories, list) or not all(isinstance(c, str) for c in categories):
+            return JSONResponse(status_code=400, content={"error": "selected_categories must be a JSON array of strings"})
+    except json.JSONDecodeError:
+        return JSONResponse(status_code=400, content={"error": "selected_categories is not valid JSON"})
+
+    try:
+        configs = json.loads(table_type_configs)
+        if not isinstance(configs, dict):
+            return JSONResponse(status_code=400, content={"error": "table_type_configs must be a JSON object"})
+    except json.JSONDecodeError:
+        return JSONResponse(status_code=400, content={"error": "table_type_configs is not valid JSON"})
+
+    try:
+        result = generate_test_cases(
+            file_bytes=file_bytes,
+            selected_categories=categories,
+            table_type_configs=configs,
+            mapping_sheet_name=mapping_sheet_name,
+            joins_sheet_name=joins_sheet_name,
+        )
+    except Exception as err:  # noqa: BLE001 -- any parsing/generation failure degrades to a 400, not a crash
+        print(f"Test case generation failed: {err}", file=sys.stderr)
+        return JSONResponse(status_code=400, content={"error": f"Failed to process workbook: {err}"})
+
+    return result
 
 
 if __name__ == "__main__":
