@@ -66,7 +66,8 @@ def generate_row_count_tests(ctx: GeneratorContext) -> list[TestCase]:
         target_qualified = resolve_target_reference(type_config, target_schema, target_table)
 
         scope = compute_join_scope(source_table, relevant_joins)
-        from_clause = "\n".join([f"FROM {source_qualified}", *scope.lines])
+        from_line = f"FROM {source_qualified} {scope.anchor_alias}" if scope.anchor_alias else f"FROM {source_qualified}"
+        from_clause = "\n".join([from_line, *scope.lines])
         scoped_filters = filter_conditions_in_scope(relevant_joins, scope.tables)
         where_clause = combine_where(build_where_clause_lines(scoped_filters))
         has_joins_or_filters = len(scope.lines) > 0 or len(scoped_filters) > 0

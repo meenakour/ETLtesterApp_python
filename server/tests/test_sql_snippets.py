@@ -55,6 +55,31 @@ def test_compute_join_scope_expands_transitively():
     assert scope.tables == {"srctb1", "srctb2", "srctb3"}
 
 
+def test_regression_handles_schema_table_alias_compound_cells():
+    joins = [
+        _join(
+            table_name="analytics_customer_ddz.t_indv_cust indv_cust",
+            join_condition="indv_cust.id = indv_cust_mbr.id",
+            tables_involved=[
+                "analytics_customer_ddz.t_indv_cust indv_cust",
+                "analytics_customer_ddz.t_indv_cust_mbr indv_cust_mbr",
+            ],
+        )
+    ]
+    scope = compute_join_scope("t_indv_cust", joins)
+    assert scope.lines[0] == (
+        "INNER JOIN `analytics_customer_ddz`.`t_indv_cust_mbr` indv_cust_mbr ON indv_cust.id = indv_cust_mbr.id"
+    )
+    assert scope.tables == {"t_indv_cust", "t_indv_cust_mbr"}
+    assert scope.anchor_alias == "indv_cust"
+
+
+def test_anchor_alias_is_none_when_not_documented():
+    joins = [_join(table_name="orders", join_condition="orders.id = customers.id", tables_involved=["orders", "customers"])]
+    scope = compute_join_scope("orders", joins)
+    assert scope.anchor_alias is None
+
+
 def test_filter_conditions_in_scope_includes_transitively_reachable_filters():
     joins = [
         _join(table_name="srctb1", join_condition="srctb1.id = srctb2.id", tables_involved=["srctb1", "srctb2"]),

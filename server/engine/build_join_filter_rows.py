@@ -7,6 +7,7 @@ from __future__ import annotations
 import re
 
 from engine.models import DetectedColumn, JoinFilterRow, SheetData
+from engine.parse_table_ref import parse_table_ref
 
 _FILTER_SECTION_MARKER = re.compile(r"^filters?$", re.IGNORECASE)
 _LEADING_TABLE_REF = re.compile(r"^([A-Za-z_][A-Za-z0-9_]*)\.")
@@ -32,6 +33,31 @@ def build_join_filter_rows(sheet: SheetData, columns: list[DetectedColumn]) -> l
 
     table_name_field = get("tableName")
     table_name_header = table_name_field.matched_header if table_name_field else None
+    tables_involved_field = get("tablesInvolved")
+    tables_involved_header = tables_involved_field.matched_header if tables_involved_field else None
+
+    # A standalone filter condition (see below) names its table by whatever alias the joins
+    # section above assigned it -- e.g. "cvr_sbscr.end_dt = ..." where "cvr_sbscr" is the alias a
+    # "Table 1"/"Table 2" cell gave to `t_cvr_sbscr` ("schema.t_cvr_sbscr cvr_sbscr"), not the real
+    # table name. Build that alias -> table map from the documented joins up front so the filter
+    # still attaches to the right table's join scope instead of being treated as its own table.
+    alias_to_table: dict[str, str] = {}
+    saw_filter_marker = False
+    for row in sheet.rows:
+        cell = _get_value(row, table_name_header)
+        if _FILTER_SECTION_MARKER.match(cell):
+            saw_filter_marker = True
+            continue
+        if saw_filter_marker:
+            continue
+        for header in (table_name_header, tables_involved_header):
+            raw = _get_value(row, header)
+            if not raw:
+                continue
+            for part in _split_table_list(raw):
+                ref = parse_table_ref(part)
+                if ref.alias and ref.table:
+                    alias_to_table[ref.alias.lower()] = ref.table
 
     rows: list[JoinFilterRow] = []
     in_filter_section = False
@@ -48,7 +74,8 @@ def build_join_filter_rows(sheet: SheetData, columns: list[DetectedColumn]) -> l
             match = _LEADING_TABLE_REF.match(condition_text)
             if not condition_text or not match:
                 continue  # can't tell which table this applies to -- skip rather than guess
-            inferred_table = match.group(1)
+            inferred_token = match.group(1)
+            inferred_table = alias_to_table.get(inferred_token.lower(), inferred_token)
             rows.append(
                 JoinFilterRow(
                     id=f"join-{index}",

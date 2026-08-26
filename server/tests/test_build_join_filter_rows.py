@@ -59,6 +59,33 @@ def test_regression_parses_a_standalone_filter_section():
     assert any(r.join_condition == "srctb1.id = srctb2.id" for r in rows)
 
 
+def test_regression_resolves_filter_section_token_through_documented_alias():
+    # Real mapping docs commonly write join participants as "schema.table alias" so the JOIN
+    # CONDITION text can reference the short alias directly. A standalone filter row underneath
+    # does the same ("cvr_sbscr.end_dt = ..."), but "cvr_sbscr" there is the ALIAS, not the real
+    # table name ("t_cvr_sbscr") -- without alias resolution the filter would attach to a
+    # nonexistent table "cvr_sbscr" and never show up in that table's actual row-count/scope query.
+    sheet = _sheet(
+        ["Table1", "table2", "join", "condition"],
+        [
+            {
+                "Table1": "analytics_customer_ddz.t_indv_cust indv_cust",
+                "table2": "analytics_policy_ddz.t_cvr_sbscr cvr_sbscr",
+                "join": "INNER",
+                "condition": "indv_cust.id = cvr_sbscr.cust_id",
+            },
+            {"Table1": "", "table2": "", "join": "", "condition": ""},
+            {"Table1": "filter", "table2": "", "join": "", "condition": ""},
+            {"Table1": "cvr_sbscr.end_dt ='9999-12-31'", "table2": "", "join": "", "condition": ""},
+        ],
+    )
+    columns = _columns(tableName="Table1", tablesInvolved="table2", joinType="join", joinCondition="condition")
+    rows = build_join_filter_rows(sheet, columns)
+    filter_row = next(r for r in rows if r.filter_condition)
+    assert filter_row.table_name == "t_cvr_sbscr"
+    assert filter_row.tables_involved == ["t_cvr_sbscr"]
+
+
 def test_skips_a_filter_row_with_no_recognizable_table_reference():
     sheet = _sheet(
         ["Table1", "table2", "join", "condition"],
