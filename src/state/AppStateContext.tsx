@@ -149,6 +149,9 @@ export interface AppActions {
   setTestCases: (testCases: TestCase[]) => void;
   replaceTestCases: (testCases: TestCase[]) => void;
   setTableTypeConfig: (targetTable: string, config: Partial<TableTypeConfig>) => void;
+  /** The raw uploaded file, kept alongside the already-parsed workbook -- needed to send the
+   *  original bytes to the Python engine's API, which does its own independent parse server-side. */
+  getUploadedFile: () => File | null;
   reset: () => void;
 }
 
@@ -157,6 +160,7 @@ export const AppStateContext = createContext<{ state: AppState; actions: AppActi
 export function AppStateProvider({ children }: { children: ReactNode }) {
   const [state, dispatch] = useReducer(reducer, initialAppState);
   const workbookRef = useRef<XLSXType.WorkBook | null>(null);
+  const fileRef = useRef<File | null>(null);
 
   const buildSheetData = (workbook: XLSXType.WorkBook, mappingName: string | null, joinsName: string | null) => {
     const mappingSheet = mappingName ? extractSheetData(workbook, mappingName) : null;
@@ -173,6 +177,7 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
         try {
           const workbook = await parseWorkbookFromFile(file);
           workbookRef.current = workbook;
+          fileRef.current = file;
           const classification = classifySheets(workbook);
           const { mappingSheet, joinsSheet, mappingColumns, joinColumns } = buildSheetData(
             workbook,
@@ -229,8 +234,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       replaceTestCases: (testCases) => dispatch({ type: 'REPLACE_TEST_CASES', payload: testCases }),
       setTableTypeConfig: (targetTable, config) =>
         dispatch({ type: 'SET_TABLE_TYPE_CONFIG', payload: { targetTable, config } }),
+      getUploadedFile: () => fileRef.current,
       reset: () => {
         workbookRef.current = null;
+        fileRef.current = null;
         dispatch({ type: 'RESET' });
       },
     }),
