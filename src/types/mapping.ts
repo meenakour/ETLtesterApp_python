@@ -7,7 +7,6 @@ export interface MappingRow {
   targetField: string;
   targetTable: string;
   targetSchema: string;
-  sourceDatatype: string;
   targetDatatype: string;
   isPrimaryKey: boolean;
   isNullable: boolean;

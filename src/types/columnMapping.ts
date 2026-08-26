@@ -6,7 +6,6 @@ export type MappingFieldKey =
   | 'targetField'
   | 'targetTable'
   | 'targetSchema'
-  | 'sourceDatatype'
   | 'targetDatatype'
   | 'primaryKeyFlag'
   | 'nullableFlag'
@@ -32,7 +31,6 @@ export const MAPPING_FIELD_LABELS: Record<MappingFieldKey, string> = {
   targetField: 'Target Field',
   targetTable: 'Target Table',
   targetSchema: 'Target Schema',
-  sourceDatatype: 'Source Datatype',
   targetDatatype: 'Target Datatype',
   primaryKeyFlag: 'Primary Key Flag',
   nullableFlag: 'Nullable Flag',

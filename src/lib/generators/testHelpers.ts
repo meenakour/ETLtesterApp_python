@@ -30,7 +30,6 @@ export function makeMappingRow(overrides: Partial<MappingRow>): MappingRow {
     targetField: '',
     targetTable: '',
     targetSchema: '',
-    sourceDatatype: '',
     targetDatatype: '',
     isPrimaryKey: false,
     isNullable: true,

@@ -58,9 +58,6 @@ export const MAPPING_FIELD_ALIASES: Record<MappingFieldKey, AliasSpec> = {
   targetSchema: {
     aliases: ['target schema', 'tgt schema', 'target db', 'target database', 'destination schema'],
   },
-  sourceDatatype: {
-    aliases: ['source datatype', 'src datatype', 'source data type', 'src data type', 'source type'],
-  },
   targetDatatype: {
     aliases: [
       'target datatype',

@@ -69,8 +69,16 @@ export function buildMappingRows(
       const targetLines = splitMultilineValue(targetFieldRaw);
       const lineCount = Math.max(sourceLines.length, targetLines.length, 1);
 
+      // A blank cell in a *matched* nullable-flag column is not the same signal as an explicit
+      // "N" -- it means this particular row's value was never filled in, not that the analyst
+      // affirmatively declared the field NOT NULL. Treating blank the same as an explicit falsy
+      // value would fabricate a constraint the document never actually asserted (seen in a real
+      // doc where every single row left this column blank, wrongly flagging nearly every field as
+      // NOT NULL) -- so a blank cell falls back to the same permissive default as the column being
+      // entirely absent, regardless of whether the column is a normal or inverted ("Mandatory") one.
+      const nullableCellBlank = !nullableColumn || getValue(row, nullableColumn.matchedHeader ?? null) === '';
       const nullableRaw = nullableColumn ? parseBoolean(row[nullableColumn.matchedHeader ?? '']) : true;
-      const isNullable = nullableColumn ? (nullableColumn.inverted ? !nullableRaw : nullableRaw) : true;
+      const isNullable = nullableCellBlank ? true : nullableColumn!.inverted ? !nullableRaw : nullableRaw;
 
       const shared = {
         sourceTable: firstTableName(getValue(row, get('sourceTable')?.matchedHeader ?? null)),
@@ -78,10 +86,9 @@ export function buildMappingRows(
         transformation: getValue(row, get('transformation')?.matchedHeader ?? null),
         targetTable: getValue(row, get('targetTable')?.matchedHeader ?? null),
         targetSchema: getValue(row, get('targetSchema')?.matchedHeader ?? null),
-        sourceDatatype: getValue(row, get('sourceDatatype')?.matchedHeader ?? null),
         targetDatatype: getValue(row, get('targetDatatype')?.matchedHeader ?? null),
         isPrimaryKey: pkColumn ? parseBoolean(row[pkColumn.matchedHeader ?? '']) : false,
-        isNullable: nullableColumn ? isNullable : true,
+        isNullable,
         sourceFileLocation: getValue(row, get('sourceFileLocation')?.matchedHeader ?? null) || undefined,
         sourceFileName: getValue(row, get('sourceFileName')?.matchedHeader ?? null) || undefined,
         rawRow: row,

@@ -1,5 +1,6 @@
 import type { JoinFilterRow, SheetData } from '@/types/mapping';
 import type { DetectedColumn, JoinFieldKey } from '@/types/columnMapping';
+import { parseTableRef } from '@/lib/excel/parseTableRef';
 
 function getValue(record: Record<string, unknown>, header: string | null): string {
   if (!header) return '';
@@ -29,6 +30,33 @@ export function buildJoinFilterRows(
   const byField = new Map(columns.map((c) => [c.field, c]));
   const get = (field: JoinFieldKey) => byField.get(field) ?? null;
   const tableNameHeader = get('tableName')?.matchedHeader ?? null;
+  const tablesInvolvedHeader = get('tablesInvolved')?.matchedHeader ?? null;
+
+  // A standalone filter condition (see below) names its table by whatever alias the joins
+  // section above assigned it -- e.g. "cvr_sbscr.end_dt = ..." where "cvr_sbscr" is the alias a
+  // "Table 1"/"Table 2" cell gave to `t_cvr_sbscr` ("schema.t_cvr_sbscr cvr_sbscr"), not the real
+  // table name. Build that alias -> table map from the documented joins up front so the filter
+  // still attaches to the right table's join scope instead of being treated as its own table.
+  const aliasToTable = new Map<string, string>();
+  {
+    let sawFilterMarker = false;
+    for (const row of sheet.rows) {
+      const cell = getValue(row, tableNameHeader);
+      if (FILTER_SECTION_MARKER.test(cell)) {
+        sawFilterMarker = true;
+        continue;
+      }
+      if (sawFilterMarker) continue;
+      for (const header of [tableNameHeader, tablesInvolvedHeader]) {
+        const raw = getValue(row, header);
+        if (!raw) continue;
+        for (const part of splitTableList(raw)) {
+          const { table, alias } = parseTableRef(part);
+          if (alias && table) aliasToTable.set(alias.toLowerCase(), table);
+        }
+      }
+    }
+  }
 
   const rows: JoinFilterRow[] = [];
   let inFilterSection = false;
@@ -43,8 +71,9 @@ export function buildJoinFilterRows(
 
     if (inFilterSection) {
       const conditionText = rawTableNameCell;
-      const inferredTable = conditionText.match(LEADING_TABLE_REF)?.[1];
-      if (!conditionText || !inferredTable) return; // can't tell which table this applies to -- skip rather than guess
+      const inferredToken = conditionText.match(LEADING_TABLE_REF)?.[1];
+      if (!conditionText || !inferredToken) return; // can't tell which table this applies to -- skip rather than guess
+      const inferredTable = aliasToTable.get(inferredToken.toLowerCase()) ?? inferredToken;
       rows.push({
         id: `join-${index}`,
         tableName: inferredTable,

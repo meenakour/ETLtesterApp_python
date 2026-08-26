@@ -32,6 +32,10 @@ const TRIVIAL_SENTINELS = new Set([
 
 const SQL_KEYWORDS = new Set([
   'case', 'when', 'then', 'else', 'end', 'and', 'or', 'not', 'null', 'as', 'is', 'in', 'like', 'between',
+  // Bare boolean literals -- e.g. "CASE WHEN active_flag = true THEN ... END" -- are SQL keywords,
+  // not user-controllable identifiers, exactly like NULL above; omitting them wrongly rejected an
+  // otherwise-fully-recognized CASE expression just for containing the word "true"/"false".
+  'true', 'false',
   // SQL type names, needed to whitelist CAST(expr AS <TYPE>) expressions
   'date', 'string', 'int', 'integer', 'bigint', 'smallint', 'tinyint', 'decimal', 'numeric', 'double',
   'float', 'real', 'timestamp', 'boolean', 'varchar', 'char', 'long', 'short', 'byte', 'binary', 'array', 'map', 'struct',

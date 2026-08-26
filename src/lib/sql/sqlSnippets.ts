@@ -1,6 +1,21 @@
 import type { JoinFilterRow } from '@/types/mapping';
 import { normalizeTableName } from '@/lib/excel/normalizeTableName';
-import { quoteColumn } from '@/lib/sql/identifierQuoting';
+import { parseTableRef } from '@/lib/excel/parseTableRef';
+import { qualifiedTable } from '@/lib/sql/identifierQuoting';
+
+/**
+ * Formats a joins-sheet table cell as the target of a JOIN clause -- e.g.
+ * "analytics_customer_ddz.t_indv_cust_mbr indv_cust_mbr" becomes
+ * "`analytics_customer_ddz`.`t_indv_cust_mbr` indv_cust_mbr". Quoting the whole raw cell as one
+ * identifier (the previous behavior) produced an identifier containing a literal dot and space --
+ * syntactically invalid, and it silently dropped the alias the join's own ON condition expects to
+ * resolve against.
+ */
+function formatJoinTarget(raw: string): string {
+  const { schema, table, alias } = parseTableRef(raw);
+  const qualified = qualifiedTable(schema, table);
+  return alias ? `${qualified} ${alias}` : qualified;
+}
 
 /**
  * A join row is only relevant to a given FROM table if that table is actually one of the two
@@ -33,6 +48,26 @@ export interface JoinScope {
   /** Every table (normalized) now covered by `currentTable` plus these join lines -- i.e. not just
    *  `currentTable` itself, but every table reachable by following joins transitively from it. */
   tables: Set<string>;
+  /** The alias the joins sheet documents for `currentTable` itself, if any -- e.g. `currentTable`
+   *  is "t_indv_cust" but a "Table 1"/"Table 2" cell writes it as "schema.t_indv_cust indv_cust".
+   *  Callers need this to declare the same alias on the FROM clause, since the join lines' ON
+   *  conditions (as documented) reference that alias, not the bare table name. */
+  anchorAlias?: string;
+}
+
+/** Finds the alias (if any) the joins sheet documents for a table, by scanning every join row's
+ *  own table cell and its "tables involved" list for one that normalizes to the same table. */
+function findDocumentedAlias(normalizedTable: string, joinRows: JoinFilterRow[]): string | undefined {
+  for (const row of joinRows) {
+    const candidates = [row.tableName, ...row.tablesInvolved];
+    for (const candidate of candidates) {
+      if (normalizeTableName(candidate) === normalizedTable) {
+        const alias = parseTableRef(candidate).alias;
+        if (alias) return alias;
+      }
+    }
+  }
+  return undefined;
 }
 
 /**
@@ -47,7 +82,8 @@ export interface JoinScope {
  * since it constrains data that's actually part of the same joined result set.
  */
 export function computeJoinScope(currentTable: string, joinRows: JoinFilterRow[]): JoinScope {
-  const tables = new Set<string>([normalizeTableName(currentTable)]);
+  const normalizedCurrent = normalizeTableName(currentTable);
+  const tables = new Set<string>([normalizedCurrent]);
   let remaining = joinRows.filter((r) => r.joinCondition);
   const lines: string[] = [];
 
@@ -63,7 +99,7 @@ export function computeJoinScope(currentTable: string, joinRows: JoinFilterRow[]
         const joinType = (row.joinType || 'INNER').toUpperCase();
         const joinTypeNormalized = joinType.includes('JOIN') ? joinType : `${joinType} JOIN`;
         const condition = stripRedundantLeadingKeyword(row.joinCondition!, 'on');
-        lines.push(`${joinTypeNormalized} ${quoteColumn(otherTable)} ON ${condition}`);
+        lines.push(`${joinTypeNormalized} ${formatJoinTarget(otherTable)} ON ${condition}`);
         tables.add(normalizeTableName(otherTable));
         progressed = true;
       } else {
@@ -73,7 +109,7 @@ export function computeJoinScope(currentTable: string, joinRows: JoinFilterRow[]
     remaining = stillRemaining;
   }
 
-  return { lines, tables };
+  return { lines, tables, anchorAlias: findDocumentedAlias(normalizedCurrent, joinRows) };
 }
 
 /** Builds `<JOIN TYPE> JOIN other_table ON <condition>` lines for every table transitively joined to `currentTable`. */
@@ -93,8 +129,9 @@ export function filterConditionsInScope(joinRows: JoinFilterRow[], scope: Set<st
 }
 
 export function buildFromClause(qualifiedTable: string, joinRows: JoinFilterRow[]): string {
-  const parts = [`FROM ${qualifiedTable}`, ...buildJoinClauseLines(qualifiedTable, joinRows)];
-  return parts.join('\n');
+  const scope = computeJoinScope(qualifiedTable, joinRows);
+  const fromLine = scope.anchorAlias ? `FROM ${qualifiedTable} ${scope.anchorAlias}` : `FROM ${qualifiedTable}`;
+  return [fromLine, ...scope.lines].join('\n');
 }
 
 export function combineWhere(whereParts: string[]): string {

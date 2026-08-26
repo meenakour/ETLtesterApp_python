@@ -28,7 +28,7 @@ const MEASURE_NAME_EXCLUDE = /count$|_pct$|percent|_num(ber)?$|_amount$|_total$|
 function isTextFormatCandidate(row: MappingRow, pattern: RegExp): boolean {
   if (!pattern.test(row.targetField)) return false;
   if (MEASURE_NAME_EXCLUDE.test(row.targetField)) return false;
-  const datatype = row.targetDatatype || row.sourceDatatype;
+  const datatype = row.targetDatatype;
   if (datatype && classifyDatatype(datatype) === 'numeric') return false;
   return true;
 }

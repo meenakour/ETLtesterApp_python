@@ -13,7 +13,6 @@ function makeMappingRow(overrides: Partial<MappingRow>): MappingRow {
     targetField: 'tgt',
     targetTable: 'tgt_table',
     targetSchema: '',
-    sourceDatatype: '',
     targetDatatype: '',
     isPrimaryKey: false,
     isNullable: true,

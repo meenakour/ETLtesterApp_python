@@ -76,8 +76,9 @@ export function generateRowCountTests(ctx: GeneratorContext): TestCase[] {
     // it -- otherwise a filter or join tied to a transitively-joined table (e.g. one two hops
     // away) would be silently dropped even though its table is genuinely part of this query, and
     // the reconciliation would compare against the wrong set of "eligible" rows.
-    const { lines: joinLines, tables: scopeTables } = computeJoinScope(sourceTable, relevantJoins);
-    const fromClause = [`FROM ${sourceQualified}`, ...joinLines].join('\n');
+    const { lines: joinLines, tables: scopeTables, anchorAlias } = computeJoinScope(sourceTable, relevantJoins);
+    const fromLine = anchorAlias ? `FROM ${sourceQualified} ${anchorAlias}` : `FROM ${sourceQualified}`;
+    const fromClause = [fromLine, ...joinLines].join('\n');
     const scopedFilters = filterConditionsInScope(relevantJoins, scopeTables);
     const whereClause = combineWhere(buildWhereClauseLines(scopedFilters));
     const hasJoinsOrFilters = joinLines.length > 0 || scopedFilters.length > 0;

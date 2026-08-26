@@ -21,7 +21,6 @@ function makeColumns(overrides: Partial<Record<MappingFieldKey, string>> = {}): 
     sourceSchema: null,
     transformation: null,
     targetSchema: null,
-    sourceDatatype: null,
     targetDatatype: null,
     primaryKeyFlag: null,
     nullableFlag: null,
@@ -122,5 +121,26 @@ describe('buildMappingRows', () => {
     ]);
     const rows = buildMappingRows(sheet, makeColumns());
     expect(rows[0].sourceTable).toBe('orders_raw');
+  });
+
+  it('regression: a blank cell in a matched Nullable Flag column defaults to nullable, the same as the column being entirely absent -- rather than fabricating a NOT NULL constraint the doc never asserted', () => {
+    const sheet = makeSheet([
+      { 'Source Field': 'a', 'Target Field': 'a', 'Source Table': 't', 'Target Table': 't', Null: '' },
+      { 'Source Field': 'b', 'Target Field': 'b', 'Source Table': 't', 'Target Table': 't', Null: 'N' },
+      { 'Source Field': 'c', 'Target Field': 'c', 'Source Table': 't', 'Target Table': 't', Null: 'Y' },
+    ]);
+    const rows = buildMappingRows(sheet, makeColumns({ nullableFlag: 'Null' }));
+    expect(rows[0].isNullable).toBe(true); // blank -- unspecified, not an explicit "not nullable"
+    expect(rows[1].isNullable).toBe(false); // explicit "N"
+    expect(rows[2].isNullable).toBe(true); // explicit "Y"
+  });
+
+  it('regression: a blank cell in a matched inverted (e.g. "Mandatory") column also defaults to nullable', () => {
+    const sheet = makeSheet([{ 'Source Field': 'a', 'Target Field': 'a', 'Source Table': 't', 'Target Table': 't', Mandatory: '' }]);
+    const columns = makeColumns({ nullableFlag: 'Mandatory' }).map((c) =>
+      c.field === 'nullableFlag' ? { ...c, inverted: true } : c
+    );
+    const rows = buildMappingRows(sheet, columns);
+    expect(rows[0].isNullable).toBe(true);
   });
 });

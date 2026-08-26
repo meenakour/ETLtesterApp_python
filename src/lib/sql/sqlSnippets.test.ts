@@ -105,6 +105,28 @@ describe('computeJoinScope', () => {
     const { lines } = computeJoinScope('a', joins);
     expect(lines).toHaveLength(1);
   });
+
+  it('regression: handles "schema.table alias" compound cells -- quotes schema and table separately and preserves the alias, instead of quoting the whole raw cell as one broken identifier', () => {
+    const joins = [
+      makeJoin({
+        tableName: 'analytics_customer_ddz.t_indv_cust indv_cust',
+        joinCondition: 'indv_cust.id = indv_cust_mbr.id',
+        tablesInvolved: ['analytics_customer_ddz.t_indv_cust indv_cust', 'analytics_customer_ddz.t_indv_cust_mbr indv_cust_mbr'],
+      }),
+    ];
+    const { lines, tables, anchorAlias } = computeJoinScope('t_indv_cust', joins);
+    expect(lines[0]).toBe(
+      'INNER JOIN `analytics_customer_ddz`.`t_indv_cust_mbr` indv_cust_mbr ON indv_cust.id = indv_cust_mbr.id'
+    );
+    expect([...tables].sort()).toEqual(['t_indv_cust', 't_indv_cust_mbr']);
+    expect(anchorAlias).toBe('indv_cust');
+  });
+
+  it('leaves anchorAlias undefined when the joins sheet never documents an alias for the anchor table', () => {
+    const joins = [makeJoin({ tableName: 'orders', joinCondition: 'orders.id = customers.id', tablesInvolved: ['orders', 'customers'] })];
+    const { anchorAlias } = computeJoinScope('orders', joins);
+    expect(anchorAlias).toBeUndefined();
+  });
 });
 
 describe('filterConditionsInScope', () => {

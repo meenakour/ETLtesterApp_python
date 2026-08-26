@@ -74,6 +74,34 @@ describe('buildJoinFilterRows', () => {
     expect(rows.some((r) => r.joinCondition === 'srctb1.id = srctb2.id')).toBe(true);
   });
 
+  it('regression: resolves a filter-section row\'s leading token through the alias documented in the joins section, when the cells combine schema.table + alias (e.g. "schema.t_cvr_sbscr cvr_sbscr")', () => {
+    // Real mapping docs commonly write join participants as "schema.table alias" so the JOIN
+    // CONDITION text can reference the short alias directly. A standalone filter row underneath
+    // does the same ("cvr_sbscr.end_dt = ..."), but "cvr_sbscr" there is the ALIAS, not the real
+    // table name ("t_cvr_sbscr") -- without alias resolution the filter would attach to a
+    // nonexistent table "cvr_sbscr" and never show up in that table's actual row-count/scope query.
+    const sheet = makeSheet(
+      ['Table1', 'table2', 'join', 'condition'],
+      [
+        {
+          Table1: 'analytics_customer_ddz.t_indv_cust indv_cust',
+          table2: 'analytics_policy_ddz.t_cvr_sbscr cvr_sbscr',
+          join: 'INNER',
+          condition: 'indv_cust.id = cvr_sbscr.cust_id',
+        },
+        { Table1: '', table2: '', join: '', condition: '' },
+        { Table1: 'filter', table2: '', join: '', condition: '' },
+        { Table1: "cvr_sbscr.end_dt ='9999-12-31'", table2: '', join: '', condition: '' },
+      ]
+    );
+    const columns = makeColumns({ tableName: 'Table1', tablesInvolved: 'table2', joinType: 'join', joinCondition: 'condition' });
+
+    const rows = buildJoinFilterRows(sheet, columns);
+    const filterRow = rows.find((r) => r.filterCondition);
+    expect(filterRow?.tableName).toBe('t_cvr_sbscr');
+    expect(filterRow?.tablesInvolved).toEqual(['t_cvr_sbscr']);
+  });
+
   it('skips a filter-section row whose condition text has no recognizable leading table reference, rather than guessing', () => {
     const sheet = makeSheet(
       ['Table1', 'table2', 'join', 'condition'],

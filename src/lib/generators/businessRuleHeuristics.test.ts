@@ -23,6 +23,11 @@ describe('classifyTransformation', () => {
     expect(result.expression).toBe("CASE WHEN status = 'A' THEN 'ACTIVE' ELSE 'INACTIVE' END");
   });
 
+  it('regression: a bare TRUE/FALSE boolean literal in a CASE expression is recognized as a keyword, not rejected as an unknown token', () => {
+    const result = classifyTransformation("CASE WHEN active_flag = true THEN 'A' ELSE 'B' END", [...KNOWN_FIELDS, 'active_flag']);
+    expect(result.strategy).toBe('CASE_EXPRESSION');
+  });
+
   it('classifies CONCAT(...) verbatim as CONCAT_EXPRESSION', () => {
     const result = classifyTransformation("CONCAT(first_name, ' ', last_name)", KNOWN_FIELDS);
     expect(result.strategy).toBe('CONCAT_EXPRESSION');

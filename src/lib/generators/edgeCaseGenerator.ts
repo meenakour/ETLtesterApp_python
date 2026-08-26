@@ -27,7 +27,7 @@ function stringChecks(row: MappingRow, col: string, table: string): Check[] {
       expectation: 'empty_string_count is 0, or a documented/expected value if empty strings are valid for this field.',
     },
   ];
-  const length = parseLength(row.targetDatatype || row.sourceDatatype);
+  const length = parseLength(row.targetDatatype);
   if (length) {
     checks.push({
       label: 'length overflow',
@@ -51,7 +51,7 @@ function numericChecks(row: MappingRow, col: string, table: string): Check[] {
       expectation: 'Review zero_value_count for plausibility given the business context of this field.',
     },
   ];
-  const scale = parseDecimalScale(row.targetDatatype || row.sourceDatatype);
+  const scale = parseDecimalScale(row.targetDatatype);
   if (scale !== null) {
     checks.push({
       label: 'precision overflow',
@@ -112,7 +112,7 @@ export function generateEdgeCaseTests(ctx: GeneratorContext): TestCase[] {
       // ETL/audit columns (etl_timestamp, load_date, batch_id, ...) are infrastructure-populated,
       // not mapped business data -- boundary checks on them are noise, not signal.
       if (isEtlSystemField(row.targetField)) continue;
-      const datatype = row.targetDatatype || row.sourceDatatype;
+      const datatype = row.targetDatatype;
       const cls = classifyDatatype(datatype);
       if (cls === 'unknown') continue;
 

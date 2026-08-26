@@ -16,6 +16,17 @@ export function PreviewStep() {
   const { requiredFieldsResolved, mappingRows } = useMappingData();
   const [tab, setTab] = useState<Tab>('mapping');
 
+  // The Source File Location/Name fields only matter once a table is actually configured as a
+  // file source or target -- for the (far more common) table-to-table case they're pure clutter,
+  // so keep them out of the main mapping panel until a table opts into File on the Source/Target
+  // Type tab.
+  const anyFileKind = Object.values(state.tableTypeConfigs).some(
+    (c) => c.sourceKind === 'file' || c.targetKind === 'file'
+  );
+  const visibleMappingColumns = anyFileKind
+    ? state.mappingColumns
+    : state.mappingColumns.filter((c) => c.field !== 'sourceFileLocation' && c.field !== 'sourceFileName');
+
   const tabBtn = (key: Tab, label: string) => (
     <button
       onClick={() => setTab(key)}
@@ -87,7 +98,7 @@ export function PreviewStep() {
             <>
               <SheetPreviewTable sheet={state.mappingSheet} />
               <ColumnMappingPanel
-                columns={state.mappingColumns}
+                columns={visibleMappingColumns}
                 headers={state.mappingSheet.headers}
                 fieldLabels={MAPPING_FIELD_LABELS}
                 requiredFields={REQUIRED_MAPPING_FIELDS}
