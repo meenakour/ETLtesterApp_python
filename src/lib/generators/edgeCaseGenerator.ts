@@ -45,11 +45,6 @@ function numericChecks(row: MappingRow, col: string, table: string): Check[] {
       sql: `SELECT COUNT(*) AS negative_value_count FROM ${table} WHERE ${col} < 0;`,
       expectation: 'negative_value_count is 0, unless negative values are expected for this field.',
     },
-    {
-      label: 'zero values',
-      sql: `SELECT COUNT(*) AS zero_value_count FROM ${table} WHERE ${col} = 0;`,
-      expectation: 'Review zero_value_count for plausibility given the business context of this field.',
-    },
   ];
   const scale = parseDecimalScale(row.targetDatatype);
   if (scale !== null) {
@@ -62,13 +57,20 @@ function numericChecks(row: MappingRow, col: string, table: string): Check[] {
   return checks;
 }
 
-function dateChecks(col: string, table: string): Check[] {
-  return [
-    {
+function dateChecks(row: MappingRow, col: string, table: string): Check[] {
+  const checks: Check[] = [];
+  // A non-nullable date field's NULL count is already asserted by PK_NULL_UNIQUENESS's own
+  // "NOT NULL Validation" test case for this exact field -- repeating it here would just be the
+  // same query under a different category. Nullable date fields aren't touched by that check at
+  // all, so this remains the only place their NULL count gets surfaced.
+  if (row.isNullable) {
+    checks.push({
       label: 'null dates',
       sql: `SELECT COUNT(*) AS null_date_count FROM ${table} WHERE ${col} IS NULL;`,
       expectation: 'null_date_count is 0, unless this field is expected to allow NULL dates.',
-    },
+    });
+  }
+  checks.push(
     {
       label: 'future dates (adjust if legitimately allowed)',
       sql: `SELECT COUNT(*) AS future_date_count FROM ${table} WHERE ${col} > CURRENT_DATE();`,
@@ -78,8 +80,9 @@ function dateChecks(col: string, table: string): Check[] {
       label: 'sentinel/default dates',
       sql: `SELECT COUNT(*) AS sentinel_date_count FROM ${table} WHERE ${col} < DATE('1900-01-01');`,
       expectation: 'sentinel_date_count is 0 (no placeholder/default dates leaking through).',
-    },
-  ];
+    }
+  );
+  return checks;
 }
 
 function booleanChecks(col: string, table: string): Check[] {
@@ -88,11 +91,6 @@ function booleanChecks(col: string, table: string): Check[] {
       label: 'value domain',
       sql: `SELECT DISTINCT ${col} FROM ${table};`,
       expectation: 'Only the expected domain values appear (e.g. true/false, 0/1, Y/N — adjust to the actual domain).',
-    },
-    {
-      label: 'values outside expected domain',
-      sql: `SELECT COUNT(*) AS invalid_flag_count FROM ${table} WHERE ${col} NOT IN (0, 1, '0', '1', 'true', 'false', 'Y', 'N');`,
-      expectation: 'invalid_flag_count is 0 — adjust the literal list to match this field\'s actual domain.',
     },
   ];
 }
@@ -120,7 +118,7 @@ export function generateEdgeCaseTests(ctx: GeneratorContext): TestCase[] {
       let checks: Check[] = [];
       if (cls === 'string') checks = stringChecks(row, col, qualified);
       if (cls === 'numeric') checks = numericChecks(row, col, qualified);
-      if (cls === 'date') checks = dateChecks(col, qualified);
+      if (cls === 'date') checks = dateChecks(row, col, qualified);
       if (cls === 'boolean') checks = booleanChecks(col, qualified);
       if (checks.length === 0) continue;
 

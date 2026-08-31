@@ -11,7 +11,7 @@ import { classifySheets, extractSheetData } from '@/lib/excel/sheetDetection';
 import { detectColumns } from '@/lib/excel/columnDetection';
 import { MAPPING_FIELD_ALIASES, JOIN_FIELD_ALIASES } from '@/lib/excel/aliases';
 
-export type Step = 'upload' | 'preview' | 'categories' | 'results';
+export type Step = 'upload' | 'review' | 'results';
 
 export interface AppState {
   step: Step;
@@ -88,7 +88,7 @@ function reducer(state: AppState, action: AppAction): AppState {
     case 'SET_LOADING':
       return { ...state, isLoading: true, error: null };
     case 'LOAD_WORKBOOK':
-      return { ...initialAppState, step: 'preview', ...action.payload };
+      return { ...initialAppState, step: 'review', ...action.payload };
     case 'SET_ERROR':
       return { ...state, isLoading: false, error: action.payload };
     case 'SET_SHEET_SELECTION':

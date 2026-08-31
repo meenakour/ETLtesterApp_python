@@ -1,5 +1,6 @@
 import type { MappingRow } from '@/types/mapping';
-import type { TestCase } from '@/types/testCase';
+import type { TestCase, TestCategory } from '@/types/testCase';
+import { TEST_CATEGORIES } from '@/types/testCase';
 
 export interface RtmEntry {
   requirementId: string;
@@ -49,4 +50,36 @@ export function buildRtm(mappingRows: MappingRow[], testCases: TestCase[]): RtmE
       covered: covering.length > 0,
     };
   });
+}
+
+export interface CategoryRtmGroup {
+  category: TestCategory;
+  testCaseCount: number;
+  coveredMappingRowCount: number;
+  /** Every mapping row, with coverage fields (coveredTestCaseIds/testCaseCount/covered) scoped to
+   *  just this category's test cases -- not the global "covered by anything" flag. */
+  entries: RtmEntry[];
+}
+
+/**
+ * Groups RTM coverage by test category instead of one row per mapping field -- a flat per-row
+ * table gets unwieldy fast on a real mapping doc with dozens of fields across nine categories.
+ * `requirementId` in buildRtm is derived only from mappingRows' own index, never from testCases,
+ * so calling buildRtm once per category (scoped to that category's test cases) yields identical,
+ * stable REQ-IDs across every group -- safe to call repeatedly.
+ */
+export function buildRtmByCategory(mappingRows: MappingRow[], testCases: TestCase[]): CategoryRtmGroup[] {
+  const groups: CategoryRtmGroup[] = [];
+  for (const category of TEST_CATEGORIES) {
+    const categoryTestCases = testCases.filter((tc) => tc.category === category);
+    if (categoryTestCases.length === 0) continue; // nothing to show for a category the user didn't generate
+    const entries = buildRtm(mappingRows, categoryTestCases);
+    groups.push({
+      category,
+      testCaseCount: categoryTestCases.length,
+      coveredMappingRowCount: entries.filter((e) => e.covered).length,
+      entries,
+    });
+  }
+  return groups;
 }

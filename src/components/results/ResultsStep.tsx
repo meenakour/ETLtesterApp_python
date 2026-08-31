@@ -7,11 +7,11 @@ import type { TestCase, TestCategory, Priority } from '@/types/testCase';
 import { TestCaseSearchFilter } from '@/components/results/TestCaseSearchFilter';
 import { TestCaseTable } from '@/components/results/TestCaseTable';
 import { TestCaseDetailPanel } from '@/components/results/TestCaseDetailPanel';
-import { RtmTable } from '@/components/results/RtmTable';
+import { RtmCategoryGroups } from '@/components/results/RtmCategoryGroups';
 import { ExportBar } from '@/components/export/ExportBar';
 import { Button } from '@/components/common/Button';
 import { Pagination } from '@/components/common/Pagination';
-import { buildRtm } from '@/lib/rtm';
+import { buildRtm, buildRtmByCategory } from '@/lib/rtm';
 import { countAiEligibleCases, enrichManualReviewCasesWithAi } from '@/lib/llm/aiAssistEnrichment';
 
 type View = 'testCases' | 'rtm';
@@ -31,7 +31,6 @@ export function ResultsStep() {
   const [cdeOnly, setCdeOnly] = useState(false);
   const [dashboardOnly, setDashboardOnly] = useState(false);
   const [selected, setSelected] = useState<TestCase | null>(null);
-  const [gapsOnly, setGapsOnly] = useState(false);
   const [currentPage, setCurrentPage] = useState(1);
 
   const filtered = useMemo(() => {
@@ -74,9 +73,11 @@ export function ResultsStep() {
     setAiLastResult({ enhanced, attempted: aiEligibleCount });
   };
 
-  const rtm = useMemo(() => buildRtm(mappingRows, state.testCases), [mappingRows, state.testCases]);
-  const rtmFiltered = useMemo(() => (gapsOnly ? rtm.filter((e) => !e.covered) : rtm), [rtm, gapsOnly]);
-  const gapCount = useMemo(() => rtm.filter((e) => !e.covered).length, [rtm]);
+  const rtmGroups = useMemo(() => buildRtmByCategory(mappingRows, state.testCases), [mappingRows, state.testCases]);
+  const rtmGaps = useMemo(
+    () => buildRtm(mappingRows, state.testCases).filter((e) => !e.covered),
+    [mappingRows, state.testCases]
+  );
 
   const viewTabBtn = (key: View, label: string) => (
     <button
@@ -100,14 +101,14 @@ export function ResultsStep() {
             Click a row to view its full description, steps and SQL.
           </p>
         </div>
-        <Button variant="ghost" onClick={() => actions.setStep('categories')} icon={<ArrowLeft size={16} />}>
+        <Button variant="ghost" onClick={() => actions.setStep('review')} icon={<ArrowLeft size={16} />}>
           Back
         </Button>
       </div>
 
       <div className="flex gap-2">
         {viewTabBtn('testCases', 'Test Cases')}
-        {viewTabBtn('rtm', `Traceability Matrix (RTM)${gapCount > 0 ? ` · ${gapCount} gap${gapCount === 1 ? '' : 's'}` : ''}`)}
+        {viewTabBtn('rtm', `Traceability Matrix (RTM)${rtmGaps.length > 0 ? ` · ${rtmGaps.length} gap${rtmGaps.length === 1 ? '' : 's'}` : ''}`)}
       </div>
 
       {view === 'testCases' && (
@@ -161,16 +162,11 @@ export function ResultsStep() {
 
       {view === 'rtm' && (
         <>
-          <div className="flex items-center justify-between">
-            <p className="text-sm text-[var(--color-text-muted)]">
-              Each row is one field mapping from your document; "Covered By" lists the test case(s) that verify it.
-            </p>
-            <label className="flex items-center gap-1.5 text-sm text-[var(--color-text-muted)]">
-              <input type="checkbox" checked={gapsOnly} onChange={(e) => setGapsOnly(e.target.checked)} />
-              Gaps only
-            </label>
-          </div>
-          <RtmTable entries={rtmFiltered} />
+          <p className="text-sm text-[var(--color-text-muted)]">
+            Grouped by test category — click a category to see which mapping fields it covers. Gaps (fields with
+            no covering test case at all) are always shown separately below.
+          </p>
+          <RtmCategoryGroups groups={rtmGroups} gaps={rtmGaps} />
         </>
       )}
 
