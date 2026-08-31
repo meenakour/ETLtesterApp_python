@@ -8,6 +8,7 @@ import {
   MANUAL_REVIEW_TOOLTIP,
   DASHBOARD_COMPARISON_TOOLTIP,
   AI_SUGGESTED_TOOLTIP,
+  AI_GENERATED_TOOLTIP,
 } from '@/components/common/badgeTooltips';
 import { SqlCodeBlock } from '@/components/results/SqlCodeBlock';
 
@@ -42,6 +43,11 @@ export function TestCaseDetailPanel({ testCase, onClose }: { testCase: TestCase;
               {testCase.isAiSuggested && (
                 <Badge tone="accent" title={AI_SUGGESTED_TOOLTIP}>
                   AI-Suggested
+                </Badge>
+              )}
+              {testCase.isAiGenerated && (
+                <Badge tone="accent" title={AI_GENERATED_TOOLTIP}>
+                  AI-Generated
                 </Badge>
               )}
             </div>

@@ -128,6 +128,135 @@ async def classify_transformation(payload: dict[str, Any]) -> Any:
         return JSONResponse(status_code=502, content={"error": "AI classification request failed"})
 
 
+MAX_PROMPT_LENGTH = 2000
+MAX_TARGET_TABLES = 50
+MAX_KNOWN_FIELDS_PER_TABLE = 300
+MAX_PROPOSED_CASES = 10
+VALID_CATEGORIES = {
+    "ROW_COUNT_RECONCILIATION",
+    "SCHEMA_DATATYPE_VALIDATION",
+    "PK_NULL_UNIQUENESS",
+    "TRANSFORMATION_VALIDATION",
+    "EDGE_CASE_DATATYPE",
+    "DQ_CHECKS",
+    "BUSINESS_RULE",
+    "NEGATIVE_CALCULATION",
+    "DASHBOARD_KPI_VALIDATION",
+}
+VALID_PRIORITIES = {"P1", "P2", "P3"}
+
+SYSTEM_PROMPT_GENERATE = f"""You propose new ETL test cases (up to {MAX_PROPOSED_CASES}) for a data mapping document, based on a tester's free-text request.
+
+Rules you MUST follow:
+- Only reference table names from the provided "target tables" list, and only field names from that table's "known fields" list. Never invent a table or field. If the request needs one that isn't present, omit that proposal rather than fabricate.
+- Each proposed test case's "category" must be exactly one of: {", ".join(sorted(VALID_CATEGORIES))}.
+- Each proposed test case's "priority" must be exactly one of: P1, P2, P3.
+- "sql" must be Databricks/Spark SQL, SELECT-only (no DDL/DML such as INSERT/UPDATE/DELETE/DROP/ALTER/CREATE/TRUNCATE/MERGE), no semicolons, and exactly one statement.
+- Propose at most {MAX_PROPOSED_CASES} test cases. If the request is too vague or out of scope, return an empty list rather than guessing.
+- Respond with ONLY a JSON object of the exact shape {{"testCases": [{{"name": "...", "category": "...", "priority": "...", "description": "...", "steps": ["...", "..."], "expectedResult": "...", "sql": "...", "targetTable": "..."}}]}} and nothing else -- no markdown fences, no explanation."""
+
+
+@app.post("/api/generate-test-cases-from-prompt")
+async def generate_test_cases_from_prompt(payload: dict[str, Any]) -> Any:
+    """Byte-for-byte the same request/response contract as the Node/Express version in
+    meenakour/ETLtesterApp's server/index.js, so src/lib/llm/generateTestCasesFromPrompt.ts works
+    against this server unchanged.
+    """
+    if client is None:
+        return JSONResponse(
+            status_code=503,
+            content={"error": "AI Assist is not configured on this server -- set ANTHROPIC_API_KEY in server/.env"},
+        )
+
+    prompt = payload.get("prompt")
+    target_tables = payload.get("targetTables")
+    known_fields_by_table = payload.get("knownFieldsByTable")
+
+    if not isinstance(prompt, str) or not prompt.strip():
+        return JSONResponse(status_code=400, content={"error": "prompt (non-empty string) is required"})
+    if len(prompt) > MAX_PROMPT_LENGTH:
+        return JSONResponse(status_code=400, content={"error": f"prompt exceeds {MAX_PROMPT_LENGTH} characters"})
+    if not isinstance(target_tables, list) or any(not isinstance(t, str) for t in target_tables):
+        return JSONResponse(status_code=400, content={"error": "targetTables (string[]) is required"})
+    if len(target_tables) > MAX_TARGET_TABLES:
+        return JSONResponse(status_code=400, content={"error": f"targetTables exceeds {MAX_TARGET_TABLES} entries"})
+    if not isinstance(known_fields_by_table, dict) or any(
+        not isinstance(fields, list)
+        or any(not isinstance(f, str) for f in fields)
+        or len(fields) > MAX_KNOWN_FIELDS_PER_TABLE
+        for fields in known_fields_by_table.values()
+    ):
+        return JSONResponse(
+            status_code=400,
+            content={"error": "knownFieldsByTable (Record<string, string[]>, each list capped) is required"},
+        )
+
+    fields_lines = "\n".join(
+        f"  {t}: {', '.join(known_fields_by_table.get(t, [])) or '(none)'}" for t in target_tables
+    )
+    user_message = (
+        f"Target tables (the ONLY tables you may reference): {', '.join(target_tables) or '(none provided)'}\n"
+        f"Known fields per table:\n{fields_lines}\n"
+        f"Tester's request: {prompt}"
+    )
+
+    try:
+        message = client.messages.create(
+            model=MODEL,
+            max_tokens=2000,
+            system=SYSTEM_PROMPT_GENERATE,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        raw = "".join(block.text for block in message.content if block.type == "text").strip()
+        usage = {
+            "inputTokens": getattr(message.usage, "input_tokens", 0) or 0,
+            "outputTokens": getattr(message.usage, "output_tokens", 0) or 0,
+        }
+
+        try:
+            parsed = json.loads(raw)
+        except json.JSONDecodeError:
+            return {"testCases": [], "usage": usage}
+
+        raw_cases = parsed.get("testCases") if isinstance(parsed, dict) else None
+        raw_cases = raw_cases if isinstance(raw_cases, list) else []
+        target_table_set = set(target_tables)
+
+        test_cases = []
+        for tc in raw_cases:
+            if not isinstance(tc, dict):
+                continue
+            if (
+                isinstance(tc.get("name"), str)
+                and tc["name"].strip()
+                and isinstance(tc.get("sql"), str)
+                and tc["sql"].strip()
+                and tc.get("category") in VALID_CATEGORIES
+                and tc.get("priority") in VALID_PRIORITIES
+                and isinstance(tc.get("targetTable"), str)
+                and tc["targetTable"] in target_table_set
+            ):
+                test_cases.append(
+                    {
+                        "name": tc["name"],
+                        "category": tc["category"],
+                        "priority": tc["priority"],
+                        "description": tc.get("description") if isinstance(tc.get("description"), str) else "",
+                        "steps": [s for s in tc.get("steps", []) if isinstance(s, str)] if isinstance(tc.get("steps"), list) else [],
+                        "expectedResult": tc.get("expectedResult") if isinstance(tc.get("expectedResult"), str) else "",
+                        "sql": tc["sql"],
+                        "targetTable": tc["targetTable"],
+                    }
+                )
+            if len(test_cases) >= MAX_PROPOSED_CASES:
+                break
+
+        return {"testCases": test_cases, "usage": usage}
+    except Exception as err:  # noqa: BLE001 -- deliberately broad: any Anthropic/SDK failure degrades to a 502
+        print(f"Anthropic request failed: {err}", file=sys.stderr)
+        return JSONResponse(status_code=502, content={"error": "AI test case generation request failed"})
+
+
 MAX_UPLOAD_BYTES = 25 * 1024 * 1024  # 25MB -- generous for any real mapping doc, cheap to enforce
 
 

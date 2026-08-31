@@ -70,6 +70,16 @@ export function allJoinRows(index: JoinAssociation): JoinFilterRow[] {
   return [...seen];
 }
 
+/** Filters mapping rows down to an explicit selection -- `null` means "no explicit selection,"
+ *  i.e. every row is included (the default, before the user has touched the field-selection UI).
+ *  An id in `selectedIds` that no longer matches any row (e.g. after a re-parse) is silently
+ *  ignored rather than causing an error. */
+export function filterMappingRowsBySelection(rows: MappingRow[], selectedIds: string[] | null): MappingRow[] {
+  if (selectedIds === null) return rows;
+  const selected = new Set(selectedIds);
+  return rows.filter((r) => selected.has(r.id));
+}
+
 export function groupMappingRowsByTargetTable(rows: MappingRow[]): Map<string, MappingRow[]> {
   const grouped = new Map<string, MappingRow[]>();
   for (const row of rows) {

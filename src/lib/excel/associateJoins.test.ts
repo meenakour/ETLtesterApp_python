@@ -1,12 +1,31 @@
 import { describe, expect, it } from 'vitest';
-import { buildJoinIndex, joinsForTable, primaryJoinsForTable } from '@/lib/excel/associateJoins';
-import type { JoinFilterRow } from '@/types/mapping';
+import { buildJoinIndex, joinsForTable, primaryJoinsForTable, filterMappingRowsBySelection } from '@/lib/excel/associateJoins';
+import type { JoinFilterRow, MappingRow } from '@/types/mapping';
 
 function makeJoinRow(overrides: Partial<JoinFilterRow>): JoinFilterRow {
   return {
     id: 'join-0',
     tableName: '',
     tablesInvolved: [],
+    rawRow: {},
+    sheetRowNumber: 2,
+    ...overrides,
+  };
+}
+
+function makeMappingRow(overrides: Partial<MappingRow>): MappingRow {
+  return {
+    id: 'row-0',
+    sourceField: '',
+    sourceTable: '',
+    sourceSchema: '',
+    transformation: '',
+    targetField: '',
+    targetTable: '',
+    targetSchema: '',
+    targetDatatype: '',
+    isPrimaryKey: false,
+    isNullable: true,
     rawRow: {},
     sheetRowNumber: 2,
     ...overrides,
@@ -59,5 +78,31 @@ describe('buildJoinIndex / primaryJoinsForTable', () => {
     const index = buildJoinIndex([]);
     expect(primaryJoinsForTable(index, 'anything')).toEqual([]);
     expect(joinsForTable(index, 'anything')).toEqual([]);
+  });
+});
+
+describe('filterMappingRowsBySelection', () => {
+  const rows = [
+    makeMappingRow({ id: 'row-1' }),
+    makeMappingRow({ id: 'row-2' }),
+    makeMappingRow({ id: 'row-3' }),
+  ];
+
+  it('null means "no explicit selection" -- returns every row unchanged', () => {
+    expect(filterMappingRowsBySelection(rows, null)).toBe(rows);
+  });
+
+  it('an empty array means explicit Select None -- returns no rows', () => {
+    expect(filterMappingRowsBySelection(rows, [])).toEqual([]);
+  });
+
+  it('returns only the selected rows, in original order', () => {
+    const filtered = filterMappingRowsBySelection(rows, ['row-3', 'row-1']);
+    expect(filtered.map((r) => r.id)).toEqual(['row-1', 'row-3']);
+  });
+
+  it('silently ignores a selected id that no longer matches any row', () => {
+    const filtered = filterMappingRowsBySelection(rows, ['row-1', 'row-does-not-exist']);
+    expect(filtered.map((r) => r.id)).toEqual(['row-1']);
   });
 });

@@ -113,4 +113,10 @@ export interface TestCase {
    *  tester's extra scrutiny before trusting it, so it's flagged distinctly rather than silently
    *  presented the same as a fully deterministic match. */
   isAiSuggested?: boolean;
+  /** Set on a wholly new test case authored by the prompt-driven "Manual & AI Review" generator
+   *  once the user approves it into the main list. Distinct from `isAiSuggested`, which only ever
+   *  marks an *existing* Manual Review case whose SQL was translated by AI Assist -- this flags a
+   *  case the AI proposed and wrote from scratch, which still deserves the same "review before
+   *  trusting it" scrutiny but was never a deterministic-classifier case to begin with. */
+  isAiGenerated?: boolean;
 }

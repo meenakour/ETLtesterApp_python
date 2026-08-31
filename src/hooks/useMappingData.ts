@@ -2,7 +2,7 @@ import { useMemo } from 'react';
 import { useAppState } from '@/hooks/useAppState';
 import { buildMappingRows } from '@/lib/excel/buildMappingRows';
 import { buildJoinFilterRows } from '@/lib/excel/buildJoinFilterRows';
-import { buildJoinIndex, groupMappingRowsByTargetTable } from '@/lib/excel/associateJoins';
+import { buildJoinIndex, groupMappingRowsByTargetTable, filterMappingRowsBySelection } from '@/lib/excel/associateJoins';
 import type { GeneratorContext } from '@/lib/generators/types';
 
 export function useMappingData() {
@@ -20,11 +20,30 @@ export function useMappingData() {
 
   const joinIndex = useMemo(() => buildJoinIndex(joinFilterRows), [joinFilterRows]);
 
+  // Unfiltered -- still consumed as-is by JoinAssociationSummary/TableTypeConfigPanel (every table
+  // must stay configurable regardless of which fields are selected for generation) and by
+  // reviewMapping/MappingIssuesList (document review isn't affected by what you're choosing to
+  // test) and the row-count display.
   const mappingRowsByTargetTable = useMemo(() => groupMappingRowsByTargetTable(mappingRows), [mappingRows]);
 
+  // Only the generator-facing context is scoped to the user's field selection. Both
+  // `mappingRowsByTargetTable` and `allMappingRows` below must be built from the SAME filtered set
+  // -- 3 of the 9 generators read `allMappingRows` directly as a secondary "known fields" lookup,
+  // and an inconsistency there would let a deselected field leak back in as a recognized reference
+  // in another field's transformation SQL.
+  const filteredMappingRows = useMemo(
+    () => filterMappingRowsBySelection(mappingRows, state.selectedMappingRowIds),
+    [mappingRows, state.selectedMappingRowIds]
+  );
+
   const generatorContext: GeneratorContext = useMemo(
-    () => ({ mappingRowsByTargetTable, joinIndex, allMappingRows: mappingRows, tableTypeConfigs: state.tableTypeConfigs }),
-    [mappingRowsByTargetTable, joinIndex, mappingRows, state.tableTypeConfigs]
+    () => ({
+      mappingRowsByTargetTable: groupMappingRowsByTargetTable(filteredMappingRows),
+      joinIndex,
+      allMappingRows: filteredMappingRows,
+      tableTypeConfigs: state.tableTypeConfigs,
+    }),
+    [filteredMappingRows, joinIndex, state.tableTypeConfigs]
   );
 
   const requiredFieldsResolved = useMemo(() => {

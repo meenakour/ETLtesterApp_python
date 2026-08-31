@@ -4,7 +4,8 @@ import { AiAssistProvider } from '@/state/AiAssistContext';
 import { AppShell } from '@/components/layout/AppShell';
 import { useAppState } from '@/hooks/useAppState';
 import { UploadStep } from '@/components/upload/UploadStep';
-import { ReviewAndGenerateStep } from '@/components/review/ReviewAndGenerateStep';
+import { ReviewMappingStep } from '@/components/review/ReviewMappingStep';
+import { CategorySelectionStep } from '@/components/categories/CategorySelectionStep';
 import { ResultsStep } from '@/components/results/ResultsStep';
 
 function StepRouter() {
@@ -13,7 +14,9 @@ function StepRouter() {
     case 'upload':
       return <UploadStep />;
     case 'review':
-      return <ReviewAndGenerateStep />;
+      return <ReviewMappingStep />;
+    case 'categories':
+      return <CategorySelectionStep />;
     case 'results':
       return <ResultsStep />;
     default:

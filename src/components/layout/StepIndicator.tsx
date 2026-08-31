@@ -3,7 +3,8 @@ import type { Step } from '@/state/AppStateContext';
 
 const STEPS: { key: Step; label: string }[] = [
   { key: 'upload', label: 'Upload' },
-  { key: 'review', label: 'Review & Generate' },
+  { key: 'review', label: 'Review Mapping' },
+  { key: 'categories', label: 'Select Categories' },
   { key: 'results', label: 'Results & Export' },
 ];
 

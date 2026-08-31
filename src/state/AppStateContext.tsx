@@ -11,7 +11,7 @@ import { classifySheets, extractSheetData } from '@/lib/excel/sheetDetection';
 import { detectColumns } from '@/lib/excel/columnDetection';
 import { MAPPING_FIELD_ALIASES, JOIN_FIELD_ALIASES } from '@/lib/excel/aliases';
 
-export type Step = 'upload' | 'review' | 'results';
+export type Step = 'upload' | 'review' | 'categories' | 'results';
 
 export interface AppState {
   step: Step;
@@ -25,6 +25,10 @@ export interface AppState {
   joinColumns: DetectedColumn<JoinFieldKey>[];
   sheetChoiceNeeded: boolean;
   selectedCategories: TestCategory[];
+  /** null means "no explicit selection -- every parsed mapping row is included," distinct from an
+   *  empty array (explicit Select None). Collapsing those two into one state would make Select
+   *  None indistinguishable from the default. */
+  selectedMappingRowIds: string[] | null;
   testCases: TestCase[];
   error: string | null;
   isLoading: boolean;
@@ -43,6 +47,7 @@ const initialAppState: AppState = {
   joinColumns: [],
   sheetChoiceNeeded: false,
   selectedCategories: [...TEST_CATEGORIES],
+  selectedMappingRowIds: null,
   testCases: [],
   error: null,
   isLoading: false,
@@ -78,8 +83,10 @@ type AppAction =
   | { type: 'OVERRIDE_MAPPING_COLUMN'; payload: { field: MappingFieldKey; header: string | null } }
   | { type: 'OVERRIDE_JOIN_COLUMN'; payload: { field: JoinFieldKey; header: string | null } }
   | { type: 'SET_SELECTED_CATEGORIES'; payload: TestCategory[] }
+  | { type: 'SET_SELECTED_MAPPING_ROW_IDS'; payload: string[] | null }
   | { type: 'SET_TEST_CASES'; payload: TestCase[] }
   | { type: 'REPLACE_TEST_CASES'; payload: TestCase[] }
+  | { type: 'ADD_TEST_CASES'; payload: TestCase[] }
   | { type: 'SET_TABLE_TYPE_CONFIG'; payload: { targetTable: string; config: Partial<TableTypeConfig> } }
   | { type: 'RESET' };
 
@@ -115,12 +122,20 @@ function reducer(state: AppState, action: AppAction): AppState {
       };
     case 'SET_SELECTED_CATEGORIES':
       return { ...state, selectedCategories: action.payload };
+    case 'SET_SELECTED_MAPPING_ROW_IDS':
+      return { ...state, selectedMappingRowIds: action.payload };
     case 'SET_TEST_CASES':
       return { ...state, testCases: action.payload, step: 'results' };
     case 'REPLACE_TEST_CASES':
       // Same shape as SET_TEST_CASES but doesn't force step -- used to patch in AI Assist
       // suggestions for existing cases without re-triggering the generate-and-navigate flow.
       return { ...state, testCases: action.payload };
+    case 'ADD_TEST_CASES':
+      // Appends approved AI-generated proposals (Manual & AI Review tab) without touching any
+      // existing case's id or forcing a step change -- distinct from SET_TEST_CASES (full replace
+      // + navigate to Results) and REPLACE_TEST_CASES (full replace, patch-only contract for the
+      // AI Assist enhance flow). The user stays wherever they currently are.
+      return { ...state, testCases: [...state.testCases, ...action.payload] };
     case 'SET_TABLE_TYPE_CONFIG': {
       const existing = state.tableTypeConfigs[action.payload.targetTable] ?? DEFAULT_TABLE_TYPE_CONFIG;
       return {
@@ -146,8 +161,10 @@ export interface AppActions {
   overrideJoinColumn: (field: JoinFieldKey, header: string | null) => void;
   setStep: (step: Step) => void;
   setSelectedCategories: (categories: TestCategory[]) => void;
+  setSelectedMappingRowIds: (ids: string[] | null) => void;
   setTestCases: (testCases: TestCase[]) => void;
   replaceTestCases: (testCases: TestCase[]) => void;
+  addTestCases: (testCases: TestCase[]) => void;
   setTableTypeConfig: (targetTable: string, config: Partial<TableTypeConfig>) => void;
   /** The raw uploaded file, kept alongside the already-parsed workbook -- needed to send the
    *  original bytes to the Python engine's API, which does its own independent parse server-side. */
@@ -230,8 +247,10 @@ export function AppStateProvider({ children }: { children: ReactNode }) {
       overrideJoinColumn: (field, header) => dispatch({ type: 'OVERRIDE_JOIN_COLUMN', payload: { field, header } }),
       setStep: (step) => dispatch({ type: 'SET_STEP', payload: step }),
       setSelectedCategories: (categories) => dispatch({ type: 'SET_SELECTED_CATEGORIES', payload: categories }),
+      setSelectedMappingRowIds: (ids) => dispatch({ type: 'SET_SELECTED_MAPPING_ROW_IDS', payload: ids }),
       setTestCases: (testCases) => dispatch({ type: 'SET_TEST_CASES', payload: testCases }),
       replaceTestCases: (testCases) => dispatch({ type: 'REPLACE_TEST_CASES', payload: testCases }),
+      addTestCases: (testCases) => dispatch({ type: 'ADD_TEST_CASES', payload: testCases }),
       setTableTypeConfig: (targetTable, config) =>
         dispatch({ type: 'SET_TABLE_TYPE_CONFIG', payload: { targetTable, config } }),
       getUploadedFile: () => fileRef.current,

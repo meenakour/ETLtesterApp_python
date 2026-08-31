@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { assignSequentialIds } from '@/lib/testCaseId';
+import { assignSequentialIds, assignNextIdForCategory } from '@/lib/testCaseId';
 import type { TestCase } from '@/types/testCase';
 
 function makeTestCase(overrides: Partial<TestCase>): TestCase {
@@ -48,5 +48,38 @@ describe('assignSequentialIds', () => {
     const result = assignSequentialIds(input);
     expect(input[0].id).toBe('draft');
     expect(result[0].id).toBe('TC-DQ-001');
+  });
+});
+
+describe('assignNextIdForCategory', () => {
+  it('starts at 001 when there are no existing cases in that category', () => {
+    expect(assignNextIdForCategory('TRANSFORMATION_VALIDATION', [])).toBe('TC-TV-001');
+  });
+
+  it('picks the next number after the highest existing id, not the count', () => {
+    const existing = [
+      makeTestCase({ id: 'TC-TV-001', category: 'TRANSFORMATION_VALIDATION' }),
+      makeTestCase({ id: 'TC-TV-003', category: 'TRANSFORMATION_VALIDATION' }),
+    ];
+    expect(assignNextIdForCategory('TRANSFORMATION_VALIDATION', existing)).toBe('TC-TV-004');
+  });
+
+  it('ignores ids from other categories', () => {
+    const existing = [
+      makeTestCase({ id: 'TC-RC-005', category: 'ROW_COUNT_RECONCILIATION' }),
+      makeTestCase({ id: 'TC-TV-001', category: 'TRANSFORMATION_VALIDATION' }),
+    ];
+    expect(assignNextIdForCategory('TRANSFORMATION_VALIDATION', existing)).toBe('TC-TV-002');
+  });
+
+  it('ignores malformed/foreign-shaped ids rather than throwing', () => {
+    const existing = [makeTestCase({ id: 'draft-7', category: 'TRANSFORMATION_VALIDATION' })];
+    expect(assignNextIdForCategory('TRANSFORMATION_VALIDATION', existing)).toBe('TC-TV-001');
+  });
+
+  it('does not renumber any existing case -- only computes the new id', () => {
+    const existing = [makeTestCase({ id: 'TC-TV-001', category: 'TRANSFORMATION_VALIDATION' })];
+    assignNextIdForCategory('TRANSFORMATION_VALIDATION', existing);
+    expect(existing[0].id).toBe('TC-TV-001');
   });
 });

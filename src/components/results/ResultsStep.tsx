@@ -8,13 +8,14 @@ import { TestCaseSearchFilter } from '@/components/results/TestCaseSearchFilter'
 import { TestCaseTable } from '@/components/results/TestCaseTable';
 import { TestCaseDetailPanel } from '@/components/results/TestCaseDetailPanel';
 import { RtmCategoryGroups } from '@/components/results/RtmCategoryGroups';
+import { ManualAiReviewPanel } from '@/components/results/ManualAiReviewPanel';
 import { ExportBar } from '@/components/export/ExportBar';
 import { Button } from '@/components/common/Button';
 import { Pagination } from '@/components/common/Pagination';
 import { buildRtm, buildRtmByCategory } from '@/lib/rtm';
 import { countAiEligibleCases, enrichManualReviewCasesWithAi } from '@/lib/llm/aiAssistEnrichment';
 
-type View = 'testCases' | 'rtm';
+type View = 'testCases' | 'rtm' | 'review';
 const PAGE_SIZE = 10;
 
 export function ResultsStep() {
@@ -101,7 +102,7 @@ export function ResultsStep() {
             Click a row to view its full description, steps and SQL.
           </p>
         </div>
-        <Button variant="ghost" onClick={() => actions.setStep('review')} icon={<ArrowLeft size={16} />}>
+        <Button variant="ghost" onClick={() => actions.setStep('categories')} icon={<ArrowLeft size={16} />}>
           Back
         </Button>
       </div>
@@ -109,6 +110,7 @@ export function ResultsStep() {
       <div className="flex gap-2">
         {viewTabBtn('testCases', 'Test Cases')}
         {viewTabBtn('rtm', `Traceability Matrix (RTM)${rtmGaps.length > 0 ? ` · ${rtmGaps.length} gap${rtmGaps.length === 1 ? '' : 's'}` : ''}`)}
+        {viewTabBtn('review', 'Manual & AI Review')}
       </div>
 
       {view === 'testCases' && (
@@ -169,6 +171,8 @@ export function ResultsStep() {
           <RtmCategoryGroups groups={rtmGroups} gaps={rtmGaps} />
         </>
       )}
+
+      {view === 'review' && <ManualAiReviewPanel />}
 
       {selected && <TestCaseDetailPanel testCase={selected} onClose={() => setSelected(null)} />}
     </div>
